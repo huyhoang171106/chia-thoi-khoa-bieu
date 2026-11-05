@@ -10,7 +10,7 @@ let r=await req('/api/state');assert.equal(r.status,401);
 r=await req('/api/auth/register',{method:'POST',data:{username:'teacher1',password:'correct-horse-1'}});assert.equal(r.status,200,JSON.stringify(r));const a=r.cookie,id=r.body.id;
 r=await req('/api/auth/me',{cookie:a});assert.equal(r.status,200);assert.equal(r.body.id,id);
 r=await req('/api/auth/me',{cookie:a});assert.equal(r.status,200);assert.equal(r.body.id,id);
-const xlsx=spawnSync('python',['tests/xlsx_test.py'],{encoding:'utf8',env:{...process.env,AUTH_TEST_COOKIE:a,AUTH_TEST_USER:String(id)}});assert.equal(xlsx.status,0,xlsx.stderr);
+const xlsx=spawnSync(process.env.PYTHON||'python',['tests/xlsx_test.py'],{encoding:'utf8',env:{...process.env,AUTH_TEST_COOKIE:a,AUTH_TEST_USER:String(id)}});assert.equal(xlsx.status,0,xlsx.stderr);
 r=await req('/api/state',{cookie:a,user:id});assert.equal(r.status,200,JSON.stringify(r));assert.equal(r.body.term,'legacy');
 r=await req('/api/state',{method:'PUT',cookie:a,user:id,data:{term:'Lịch riêng'}});assert.equal(r.status,200,JSON.stringify(r));
 r=await req('/api/auth/bootstrap',{cookie:a});assert.equal(r.status,200);assert.equal(r.body.id,id);assert.equal(r.body.state.term,'Lịch riêng');

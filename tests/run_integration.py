@@ -10,9 +10,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+try:  # never run against a server that is using a real database
+    urllib.request.urlopen('http://127.0.0.1:3000/', timeout=1)
+    sys.exit('Cổng 3000 đang bận; hãy tắt máy chủ đang chạy trước khi chạy test.')
+except OSError:
+    pass
+
 with tempfile.TemporaryDirectory() as folder:
     db = Path(folder) / 'test.db'
-    env = {**os.environ, 'LT_DB_FILE': str(db)}
+    env = {**os.environ, 'LT_DB_FILE': str(db), 'PYTHON': sys.executable}
     server = subprocess.Popen([sys.executable, '-X', 'utf8', '-m', 'server.app'], cwd=ROOT, env=env)
     try:
         for _ in range(100):

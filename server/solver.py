@@ -376,8 +376,10 @@ def solve(state, time_limit=None, require_extra_pairing=False, cancel=None):
 
     compact_weight = (800 + 10 * SESSION_COST) * len(teachers) + 1
     pairing_bound = sum(len(group) for group in experience_groups.values())
-    model.minimize(sum(math_doubles) * (pairing_bound + 1) * compact_weight +
-                   sum(pairing_excess) * compact_weight + sum(soft_costs))
+    # Double math sessions and unpaired experience classes always outweigh sessions and gaps.
+    primary = sum(math_doubles) * (pairing_bound + 1) + sum(pairing_excess)
+    objective = primary * compact_weight + sum(soft_costs)
+    model.minimize(objective)
     # Try preferences briefly, then search the complete model.
     scenarios = [(True, True), (False, require_extra_pairing)]
     started = time.monotonic()
@@ -392,6 +394,7 @@ def solve(state, time_limit=None, require_extra_pairing=False, cancel=None):
             break
         # Fix the preferences in a copy; assumptions would force single-threaded search.
         scenario = model.clone()
+        scenario.clear_objective()  # feasibility-only search finds the first solution sooner
         for literal, wanted in ((prefer_single_math, single_math), (prefer_paired_experience, pair_experience)):
             scenario.add(scenario.get_bool_var_from_proto_index(literal.index) == int(wanted))
         solver = cp_model.CpSolver()
@@ -406,19 +409,29 @@ def solve(state, time_limit=None, require_extra_pairing=False, cancel=None):
     values = {}
     if status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
         values = {key: solver.value(var) for key, var in variables.items()}
-    if status == cp_model.FEASIBLE:
+    if values:
         # The first solution only proves feasibility. Starting from it, spend a
-        # bounded budget minimizing sessions and gaps under the same preferences.
+        # bounded budget improving it in two stages: first the dominant terms
+        # (double math sessions, unpaired experience classes) on their own, which
+        # the search settles much faster, then sessions and gaps with those fixed.
         remaining = None if time_limit is None else time_limit - (time.monotonic() - started)
-        budget = IMPROVE_SECONDS if remaining is None else min(IMPROVE_SECONDS, remaining)
-        if budget > 0:
-            scenario.clear_hints()
+        deadline = time.monotonic() + (IMPROVE_SECONDS if remaining is None else min(IMPROVE_SECONDS, remaining))
+        for literal, wanted in ((prefer_single_math, single_math), (prefer_paired_experience, pair_experience)):
+            model.add(literal == int(wanted))
+        solver.parameters.stop_after_first_solution = False
+        for goal, share in ((primary, 0.35), (objective, 1.0)):
+            left = deadline - time.monotonic()
+            if left <= 0 or cancel is not None and cancel.is_set():
+                break
+            model.clear_hints()
             for key, var in variables.items():
-                scenario.add_hint(scenario.get_bool_var_from_proto_index(var.index), values[key])
-            solver.parameters.stop_after_first_solution = False
-            solver.parameters.max_time_in_seconds = budget
-            if search(solver, scenario, cancel) in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+                model.add_hint(var, values[key])
+            model.minimize(goal)
+            solver.parameters.max_time_in_seconds = left * share
+            if search(solver, model, cancel) in (cp_model.FEASIBLE, cp_model.OPTIMAL):
                 values = {key: solver.value(var) for key, var in variables.items()}
+                if goal is primary:
+                    model.add(primary <= round(solver.objective_value))
     if status == cp_model.INFEASIBLE:
         return {'ok': False, 'status': 'infeasible', 'message': 'Các quy định và phân công không thể thỏa đồng thời, bao gồm yêu cầu mỗi buổi dạy ít nhất 2 tiết. Hãy kiểm tra số buổi, phân công và các tiết khóa.'}
     if status not in (cp_model.FEASIBLE, cp_model.OPTIMAL):
