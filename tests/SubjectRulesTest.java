@@ -1,0 +1,8 @@
+import java.util.*;
+public class SubjectRulesTest {
+ static Map<String,Object> fixture(String subject,int day2,int period2,int count){Map<String,Object> x=new HashMap<>();x.put("classes",List.of(Map.of("name","9/1","shift","morning")));x.put("teachers",List.of(Map.of("name","Lan","sessionRule",day2==0?"1":"2")));x.put("assignments",List.of(Map.of("className","9/1","teacher","Lan","subject",subject,"periods",count)));x.put("events",List.of());List<Map<String,Object>> locked=new ArrayList<>();locked.add(lock(subject,0,1));locked.add(lock(subject,day2,period2));if(count==3)locked.add(lock(subject,0,3));x.put("schedule",locked);return x;}
+ static Map<String,Object> lock(String subject,int day,int period){return Map.of("className","9/1","shift","morning","teacher","Lan","subject",subject,"day",day,"period",period,"locked",true);}
+ static void accepted(Map<String,Object> x){Map<String,Object> result=new Main.Scheduler(x).run();if(!Boolean.TRUE.equals(result.get("ok")))throw new AssertionError(result);}
+ static void rejected(Map<String,Object> x,String contains){try{Map<String,Object> result=new Main.Scheduler(x).run();if(!Boolean.FALSE.equals(result.get("ok")))throw new AssertionError("Expected rejection: "+result);}catch(IllegalArgumentException ex){if(!ex.getMessage().contains(contains))throw ex;}}
+ public static void main(String[] args){accepted(fixture("Toán",1,1,2));accepted(fixture("Tiếng Anh",1,1,2));accepted(fixture("Ngữ văn",0,2,2));accepted(fixture("Lịch sử",2,1,2));rejected(fixture("Lịch sử",1,1,2),"1 ngày");rejected(fixture("Toán",0,2,2),"tiết đôi");rejected(fixture("Ngữ văn",0,2,3),"tối đa 2 tiết Văn");System.out.println("Only literature permits doubles; Math and English allow consecutive days.");}
+}

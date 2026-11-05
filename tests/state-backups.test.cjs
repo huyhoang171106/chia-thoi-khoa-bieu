@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');require('../public/state-backups.js');
+const values=new Map(),storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};
+writeLocalState(storage,'user',JSON.stringify({classes:[{name:'6/1'}]}));
+writeLocalState(storage,'user',JSON.stringify({classes:[]}));
+assert.equal(JSON.parse(JSON.parse(storage.getItem('user:backups'))[0].data).classes[0].name,'6/1');
+writeLocalState(storage,'user',JSON.stringify({classes:[]}));
+assert.equal(JSON.parse(storage.getItem('user:backups')).length,1);
+for(let i=0;i<20;i++)writeLocalState(storage,'user',JSON.stringify({classes:[i]}));
+assert.equal(JSON.parse(storage.getItem('user:backups')).length,15);
+console.log('Previous browser data is preserved before replacement.');

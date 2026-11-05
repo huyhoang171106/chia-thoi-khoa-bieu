@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+const base='http://localhost:3000';
+async function req(path,{method='GET',cookie='',user='',data,origin}={}){
+  const headers={};if(cookie)headers.Cookie=cookie;if(user)headers['X-LT-User']=String(user);if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;
+  const response=await fetch(base+path,{method,headers,body:data?JSON.stringify(data):undefined});
+  const result=await response.json();return {status:response.status,body:result,cookie:response.headers.get('set-cookie')?.split(';')[0]};
+}
+let r=await req('/api/state');assert.equal(r.status,401);
+r=await req('/api/auth/register',{method:'POST',data:{username:'teacher1',password:'correct-horse-1'}});assert.equal(r.status,200,JSON.stringify(r));const a=r.cookie,id=r.body.id;
+r=await req('/api/auth/me',{cookie:a});assert.equal(r.status,200);assert.equal(r.body.id,id);
+r=await req('/api/auth/me',{cookie:a});assert.equal(r.status,200);assert.equal(r.body.id,id);
+const xlsx=spawnSync('python',['tests/xlsx_test.py'],{encoding:'utf8',env:{...process.env,AUTH_TEST_COOKIE:a,AUTH_TEST_USER:String(id)}});assert.equal(xlsx.status,0,xlsx.stderr);
+r=await req('/api/state',{cookie:a,user:id});assert.equal(r.status,200,JSON.stringify(r));assert.equal(r.body.term,'legacy');
+r=await req('/api/state',{method:'PUT',cookie:a,user:id,data:{term:'Lịch riêng'}});assert.equal(r.status,200,JSON.stringify(r));
+r=await req('/api/auth/bootstrap',{cookie:a});assert.equal(r.status,200);assert.equal(r.body.id,id);assert.equal(r.body.state.term,'Lịch riêng');
+r=await req('/api/auth/login',{method:'POST',data:{username:'teacher1',password:'wrong-password'}});assert.equal(r.status,401);
+r=await req('/api/auth/login',{method:'POST',data:{username:'teacher1',password:'correct-horse-1'}});assert.equal(r.status,200);const b=r.cookie;assert.notEqual(a,b);
+r=await req('/api/state',{cookie:a,user:id});assert.equal(r.status,401);
+r=await req('/api/auth/bootstrap',{cookie:a});assert.equal(r.status,401);
+r=await req('/api/state',{method:'PUT',cookie:a,user:id,data:{term:'stale'}});assert.equal(r.status,401);
+await req('/api/auth/logout',{method:'POST',cookie:a});
+r=await req('/api/state',{cookie:b,user:id});assert.equal(r.status,200);assert.equal(r.body.term,'Lịch riêng');
+r=await req('/api/auth/register',{method:'POST',data:{username:'teacher2',password:'correct-horse-2'}});assert.equal(r.status,200,JSON.stringify(r));const c=r.cookie,id2=r.body.id;
+r=await req('/api/state',{cookie:c,user:id2});assert.equal(r.status,200);assert.equal(r.body,null);
+r=await req('/api/state',{cookie:c,user:id});assert.equal(r.status,401);
+r=await req('/api/auth/register',{method:'POST',data:{username:'teacher1',password:'correct-horse-1'}});assert.equal(r.status,409);
+r=await req('/api/auth/logout',{method:'POST',cookie:b,origin:'http://evil.example'});assert.equal(r.status,403);
+r=await req('/api/auth/logout',{method:'POST',cookie:b});assert.equal(r.status,200);
+r=await req('/api/auth/me',{cookie:b});assert.equal(r.status,401);
+console.log('Registration, legacy migration, account isolation, single session, logout and origin checks passed.');

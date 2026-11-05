@@ -1,0 +1,11 @@
+const {readFileSync}=require('node:fs');
+const {runInNewContext}=require('node:vm');
+const assert=require('node:assert/strict');
+const code=readFileSync('public/sidebar.js','utf8');
+const classes=new Set(),storage=new Map(),nav={};let toggle;
+const sidebar={querySelector:s=>s==='nav'?nav:null,insertBefore:(item,before)=>{assert.equal(before,nav);toggle=item}};
+const app={classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)}};
+const document={querySelector:s=>s==='.app'?app:sidebar,querySelectorAll:()=>[],createElement:()=>({attributes:{},setAttribute(k,v){this.attributes[k]=v},addEventListener(_,fn){this.click=fn}})};
+runInNewContext(code,{document,localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},matchMedia:()=>({matches:false})});
+assert.equal(toggle.attributes['aria-expanded'],'true');assert.equal(toggle.title,'Thu gọn thanh điều hướng');toggle.click();assert(classes.has('sidebar-collapsed'));assert.equal(toggle.attributes['aria-expanded'],'false');assert.equal(storage.get('lich-truong-sidebar'),'collapsed');toggle.click();assert(classes.has('sidebar-expanded'));assert.equal(toggle.attributes['aria-expanded'],'true');
+console.log('Sidebar toggle expands, collapses and remembers its state.');
