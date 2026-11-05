@@ -1,41 +1,206 @@
 # Lịch Trường
 
-Ứng dụng chạy cục bộ giúp giáo viên THCS chuẩn bị dữ liệu và tìm thời khóa biểu. Cần Java JDK 21 và Node.js, không cần Maven hay cài gói npm.
+A local timetable planner for Vietnamese lower secondary schools. Prepare teaching assignments, generate a timetable with Google OR-Tools CP-SAT, adjust lessons manually, and export schedules for classes, teachers, or the whole school.
 
-Tại thư mục gốc chạy `npm run dev`, sau đó mở http://localhost:3000. Chọn **Dùng dữ liệu mẫu** để thử nhanh. Dừng máy chủ bằng Ctrl+C.
+The application interface is in Vietnamese. This guide keeps exact interface labels, import headers, and recognized subject names where needed.
 
-Đăng ký bằng tên đăng nhập 3–40 ký tự không dấu và mật khẩu từ 10 ký tự. Tài khoản đầu tiên đăng ký trên database sẽ nhận bản sao dữ liệu đã lưu của phiên bản trước. Các tài khoản sau có dữ liệu riêng. Đăng nhập lần mới vô hiệu hóa phiên trước ngay trên máy chủ; giao diện cũ thông báo khi có yêu cầu tiếp theo hoặc khi kiểm tra phiên định kỳ. Ứng dụng hiện chỉ lắng nghe tại localhost; để dùng từ các thiết bị khác cần triển khai máy chủ chung có HTTPS và cấu hình bảo mật phù hợp. Phiên bản này chưa hỗ trợ đặt lại mật khẩu.
+## Contents
 
-Ứng dụng lưu dữ liệu vào SQL Server thông qua Windows PowerShell và `System.Data.SqlClient` có sẵn trên Windows. Tạo database trước và điền `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` vào `.env`; tài khoản cần quyền đọc, ghi và tạo bảng trong database. Kết nối tới `localhost` hoặc `127.0.0.1` tin cậy chứng chỉ của máy chủ cục bộ; với máy chủ khác cần chứng chỉ đáng tin cậy. Bảng `dbo.LichTruongState` được tạo tự động khi kết nối lần đầu. Hỗ trợ SQL Server Authentication. Thanh trạng thái trên web báo kết nối và kết quả lưu; nếu kết nối lỗi, dữ liệu tạm còn trong trình duyệt. Khi database chưa có dữ liệu, dữ liệu sẵn có trên trình duyệt sẽ được chuyển vào database. Nếu cả database và trình duyệt đều có dữ liệu chưa đồng bộ, ứng dụng dừng đồng bộ để tránh ghi đè; cần sao lưu và xử lý dữ liệu trước khi tiếp tục.
+- [Requirements](#requirements)
+- [Getting started](#getting-started)
+- [Preparing teaching data](#preparing-teaching-data)
+- [Scheduling rules](#scheduling-rules)
+- [Generating and editing a timetable](#generating-and-editing-a-timetable)
+- [Exporting schedules](#exporting-schedules)
+- [Accounts, storage, and backups](#accounts-storage-and-backups)
+- [Legacy data](#legacy-data)
 
-Nhập một dòng phân công cho từng giáo viên dạy một môn của một lớp. Các dòng cùng môn được xét chung khi áp dụng ràng buộc và phân bố tiết; tên môn được chuẩn hóa dấu, chữ hoa/thường và khoảng trắng (Văn/Ngữ văn, Anh/Tiếng Anh được tính chung). Số tiết mỗi phân công phải là số nguyên từ 1 đến 30. Hoạt động cố định điều chỉnh tại Thiết lập tuần học. Xuất CSV để mở bằng Excel, hoặc dùng In / PDF để lưu lịch đang xem thành PDF.
+## Requirements
 
-Tại màn hình thời khóa biểu, **Xuất CSV đang xem** tải lịch của lớp hoặc giáo viên đang chọn. **Xuất Excel toàn trường** tạo file `.xlsx`, mỗi khối là một trang tính với các lớp đặt cạnh nhau, chia buổi sáng và chiều. Lớp chưa xác định được khối được đưa vào trang riêng. File phản ánh lịch hiện tại; các tiết chưa xếp chưa xuất hiện trong file.
+| Component | Purpose |
+| --- | --- |
+| Windows with Windows PowerShell | SQL Server access through `System.Data.SqlClient` |
+| Java JDK 21 | Compile and run the Java server |
+| Node.js and npm | Run the development launcher |
+| Python with pip | Run the CP-SAT scheduling worker |
+| SQL Server | Store accounts and application data |
 
-Trong Dữ liệu giảng dạy, có thể tạo lớp hàng loạt theo khối, buổi và số lớp; tên được tạo theo mẫu `9/1`, `9/2`… Khai báo môn, lớp, giáo viên và số tiết trong bảng phân công; không cần nhập danh sách môn theo khối.
+Ensure `java`, `javac`, `node`, `npm`, and `python` are available on your `PATH`. Maven and an `npm install` step are not required.
 
-Nút **Thêm phân công trái buổi** thêm các dòng Hoạt động trải nghiệm và Thể dục còn thiếu cho mỗi lớp, mỗi môn 2 tiết; sau đó chọn một giáo viên cho mỗi dòng. Khi có hai môn này trong phân công, bộ xếp yêu cầu đủ cả hai ở tất cả lớp; mỗi lớp học chúng vào cùng một ngày, trái buổi chính, chiếm tiết 1–4, mỗi môn thành một cặp tiết. Có thể chọn thẻ và khóa tiết trong bảng kéo thả của buổi trái; khi xếp lại các tiết khóa vẫn được giữ. Tên môn được nhận diện theo đúng tên trên, không phân biệt chữ hoa hoặc dấu.
+## Getting started
 
-Các mục lớp, giáo viên, phân công và hoạt động hỗ trợ nhập Excel `.xlsx` (trang tính đầu tiên) hoặc CSV UTF-8. Tải mẫu CSV tại từng mục, điền và tải lại CSV hoặc lưu thành `.xlsx`; đặt cột tên lớp trong Excel là **Text** để không biến `9/1` thành ngày tháng. Dữ liệu được xem trước và kiểm tra toàn bộ trước khi thêm; file có lỗi cần sửa rồi tải lại. Với bảng phân công, cần khai báo lớp trước. Không cần nhập riêng danh sách giáo viên: bảng phân công có các cột `Giáo viên`, `Lớp`, `Môn`, `Tiết/Tuần` (chấp nhận cả tên cột trong mẫu cũ); giáo viên chưa có sẽ được thêm khi xác nhận nhập. Các ô giáo viên trống kế thừa tên ở dòng trên trong cùng nhóm; một dòng trống hoàn toàn kết thúc nhóm và dòng sau cần ghi tên giáo viên. Cần kiểm tra các tên đã điền trong bản xem trước.
+### 1. Configure SQL Server
 
-Bộ xếp lịch áp dụng điều kiện bắt buộc về trùng lịch, quy tắc số buổi theo từng giáo viên (mặc định 4–5 buổi mỗi tuần, tính cả buổi trái), tiết cố định và tiết trống của lớp. Trong mỗi buổi, giữa hai tiết dạy liên tiếp của giáo viên được trống tối đa một tiết; thời gian giữa buổi sáng và chiều không tính. Trong buổi chính, chỉ Văn/Ngữ văn được xếp hai tiết cùng môn liền nhau, tối đa hai tiết liên tiếp. Các môn dưới 3 tiết/tuần cách ít nhất 1 ngày ở giữa, trừ Toán, Anh/Tiếng Anh, một tiết đôi Văn và ngoại lệ giáo viên dạy một buổi; môn từ 3 tiết trở lên linh hoạt về khoảng cách ngày. Hoạt động trải nghiệm và Thể dục trái buổi tiếp tục được xếp thành hai cặp tiết liên tục. Bộ xếp có xét ưu tiên giảm khoảng trống của giáo viên, nhưng dừng khi tìm được lịch hợp lệ đầu tiên nên không bảo đảm tối ưu. Chỉ kết luận vô nghiệm khi bộ giải chứng minh được.
+Create a database, then create a `.env` file in the project root with your SQL Server connection details:
 
-Mỗi lớp được học tối đa hai tiết Toán trong một buổi, hai tiết phải cách nhau ít nhất một tiết khác. Anh/Tiếng Anh tối đa một tiết mỗi buổi.
+```dotenv
+DB_HOST=localhost
+DB_PORT=1433
+DB_NAME=lich_truong
+DB_USER=your_sql_login
+DB_PASSWORD=your_sql_password
+```
 
-Văn/Ngữ văn được ghép thành các cặp 2 tiết liền nhau trong mỗi buổi. Với 4 tiết Văn, lớp học đúng 2 buổi; hai buổi có thể nằm vào hai ngày liên tiếp. Nếu tổng số tiết Văn là số lẻ thì được phép một tiết lẻ trong tuần. Khi kéo thả dở, một tiết Văn được phép đứng riêng tạm thời để người dùng đặt tiếp tiết thứ hai.
+The connection uses SQL Server Authentication. The database account needs permission to read data, write data, and create tables. Application tables are created automatically when needed.
 
-Khi tạo lịch, hệ thống thử ưu tiên mỗi buổi tối đa một tiết Toán và ghép các lớp Hoạt động trải nghiệm trong 8 giây. Nếu chưa tìm được lịch, bộ xếp tiếp tục tìm linh hoạt hơn và giữ các quy định bắt buộc cùng tiết khóa. Kết quả thông báo các buổi có hai tiết Toán hoặc giáo viên còn các lớp chưa ghép; chưa khẳng định đó là phương án ít ngoại lệ nhất.
+Connections are encrypted. Connections to `localhost` or `127.0.0.1` trust the local server certificate; other database hosts require a trusted certificate.
 
-Trong màn hình thời khóa biểu, mỗi tiết chưa xếp xuất hiện thành một thẻ theo phân công. Chọn buổi và kéo thẻ vào đúng cột lớp và tiết, hoặc chọn thẻ rồi chọn ô. Có thể kéo tiết chưa khóa sang ô trống hoặc dùng dấu × để đưa về danh sách. Nhấp đúp vào ô có tiết hoặc nhấn nút khóa để giữ nguyên tiết đó khi tạo tự động; những tiết chưa khóa có thể được xếp lại. Hoạt động cố định phải chỉnh trong phần thiết lập. Sau khi tạo lịch, phần xem theo lớp vẫn hỗ trợ chọn hai ô để đổi chỗ. Mỗi lần tạo hoặc chỉnh, tối đa 15 phiên bản gần nhất được lưu cùng dữ liệu tài khoản; chỉ khôi phục được khi dữ liệu lớp, giáo viên, phân công và hoạt động cố định khớp với thời điểm tạo phiên bản.
+### 2. Install the scheduling dependency
 
-Nên sao lưu SQL Server cho dữ liệu quan trọng.
+Run once from the project root:
 
-Khi tạo lịch tự động hoặc chỉnh một lịch đã xếp đủ tiết, số buổi của giáo viên phải đúng quy định đã chọn và mỗi buổi sáng hoặc chiều có dạy phải có ít nhất 2 tiết, kể cả buổi trái. Khi đang xếp dở, hai yêu cầu tối thiểu này được kiểm tra lúc đặt đủ tiết. Nếu không xếp được, hãy kiểm tra số tiết phân công, số buổi đã chọn và các tiết khóa.
+```powershell
+python -m pip install --target build/vendor ortools
+```
 
-Nút **Tạo thời khóa biểu** sử dụng CP-SAT của Google OR-Tools. Cần Python và chạy `python -m pip install --target build/vendor ortools` một lần trong thư mục dự án. Hệ thống tìm lịch hợp lệ hoặc báo khi chứng minh được các điều kiện mâu thuẫn. Thanh trạng thái hiển thị thời gian đã chạy; không thể dự đoán chính xác thời gian hoàn tất. Có thể nhấn **Dừng xếp lịch** để giữ lịch đang có. Một lịch tìm được phải vượt qua bộ kiểm tra độc lập trước khi hiển thị.
+### 3. Start the application
 
-Danh sách giáo viên mặc định 4–5 buổi/tuần, có thể chọn lịch riêng đúng 1, 2, 3, 4, 5 hoặc 6 buổi cho từng người. Số buổi tính cả buổi trái; giáo viên chưa được phân công không bị áp dụng. Mẫu nhập Excel/CSV chỉ cần cột Giáo viên; sau khi nhập, chọn lịch riêng cho giáo viên cần ngoại lệ. Nếu số tiết không phù hợp với số buổi đã chọn, hệ thống sẽ thông báo. Với giáo viên dạy đúng một buổi, hai tiết cùng môn ít tiết có thể học cùng buổi; ngoài Văn và hai môn trái buổi, các tiết đó không được liền nhau.
+```powershell
+npm run dev
+```
 
-Tên giáo viên là duy nhất, so khớp không phân biệt chữ hoa/thường và khoảng trắng thừa nhưng vẫn phân biệt dấu tiếng Việt. Khi nhập phân công, tên đã có sẽ được dùng lại; khi nhập danh sách giáo viên, những tên đã có được bỏ qua và hiển thị trong bản xem trước. Nếu hai người thực sự trùng tên, cần ghi tên phân biệt, chẳng hạn thêm chữ lót hoặc mã giáo viên.
+Open [http://localhost:3000](http://localhost:3000), register an account, and prepare your teaching data. Use **Dùng dữ liệu mẫu** (Load sample data) to explore the interface.
 
-Tuần học chỉ từ thứ Hai đến thứ Sáu, cả buổi sáng và chiều. Khi tải dữ liệu cũ, các tiết thứ Bảy được đưa trở lại danh sách chưa xếp; các hoạt động cố định thứ Bảy được gỡ khỏi lịch và cần chọn lại ngày nếu vẫn sử dụng. Phiên bản lịch có tiết thứ Bảy được giữ để tham khảo nhưng không thể khôi phục.
+Press **Ctrl+C** in the terminal to stop the server.
+
+## Preparing teaching data
+
+### Classes, teachers, and assignments
+
+Create classes individually or in batches by grade, main shift, and class count. Batch creation produces names such as `9/1`, `9/2`, and so on.
+
+Add one assignment row for each teacher teaching a subject to a class. Each row specifies the class, subject, teacher, and weekly period count. The count must be an integer from **1 to 30**. A separate subject list per grade is not required.
+
+Assignments for the same subject are considered together when applying scheduling rules. Subject matching normalizes case, accents, and spacing. These aliases are also grouped together:
+
+| Subject | Recognized names |
+| --- | --- |
+| Literature | `Văn`, `Ngữ văn` |
+| English | `Anh`, `Tiếng Anh` |
+
+Teacher names must be unique. Matching ignores case and extra whitespace but preserves Vietnamese accents. Existing teachers are reused when importing assignments; duplicate entries in teacher imports are skipped and listed in the preview. If two people have the same name, distinguish them with a middle name or identifier.
+
+Configure fixed activities in **Thiết lập tuần học** (School week setup).
+
+### CSV and Excel imports
+
+Classes, teachers, assignments, and fixed activities support UTF-8 CSV and `.xlsx` imports. Only the first worksheet of an Excel file is read.
+
+1. Download the CSV template from the relevant section.
+2. Fill it in and save it as UTF-8 CSV or `.xlsx`.
+3. Upload the file and review the preview.
+4. Correct any validation errors before confirming the import.
+
+Format class-name columns as **Text** in Excel so names such as `9/1` are not converted into dates.
+
+Create classes before importing assignments. Assignment imports use the following headers; headers from older templates are also accepted:
+
+| Header | Meaning |
+| --- | --- |
+| `Giáo viên` | Teacher |
+| `Lớp` | Class |
+| `Môn` | Subject |
+| `Tiết/Tuần` | Periods per week |
+
+Teachers that do not exist yet are added when the import is confirmed. Within a group, a blank teacher cell inherits the preceding teacher name. A completely blank row ends the group, so the next group must start with an explicit teacher name. Check inherited names in the preview.
+
+The teacher template only requires the teacher-name column. Configure individual session rules after importing.
+
+### Opposite-shift subjects
+
+Use **Thêm phân công trái buổi** (Add opposite-shift assignments) to add missing assignments for `Hoạt động trải nghiệm` (Experiential activities) and `Thể dục` (Physical education). Each subject receives two periods per class; select a teacher for every new row.
+
+If either subject is assigned, every class must have both subjects. The scheduler places all four periods on the same day, in the shift opposite the class's main shift:
+
+- One subject occupies periods **1–2**.
+- The other occupies periods **3–4**.
+
+Use the Vietnamese subject names above; recognition ignores case and accents. Lessons in the opposite shift can also be placed and locked manually.
+
+## Scheduling rules
+
+A **session** is one morning or afternoon of teaching. The school week runs from **Monday through Friday**, with five periods per shift.
+
+### General constraints
+
+- A class or teacher cannot have overlapping lessons.
+- Fixed activities and locked lessons must be preserved.
+- A class cannot have empty periods between lessons or activities within a session.
+- A teacher may have at most one empty period between consecutive teaching periods in the same session. The break between morning and afternoon does not count.
+- Teacher time-off settings must be respected.
+
+### Teacher workloads
+
+Teachers use **4–5 sessions per week** by default. Each teacher can instead be assigned exactly **1, 2, 3, 4, 5, or 6 sessions**. Opposite-shift teaching counts toward this total. Teachers without assignments are exempt.
+
+Every occupied teaching session must contain at least **two periods**. Both this minimum and the required session count apply to automatically generated timetables and manual edits of a complete timetable. During partial placement, minimum requirements are checked when all periods have been placed.
+
+### Subject distribution
+
+| Subject or condition | Rule |
+| --- | --- |
+| Mathematics (`Toán`) | At most two periods per class per session, separated by at least one other period |
+| English (`Anh` / `Tiếng Anh`) | At most one period per class per session |
+| Literature (`Văn` / `Ngữ văn`) | Consecutive two-period pairs, with at most two periods per session |
+| Other main-shift subjects | Consecutive periods of the same subject are not allowed |
+| Subjects with fewer than three weekly periods | At least one intervening day between occurrences, subject to the exceptions below |
+| Subjects with three or more weekly periods | No minimum separation between teaching days |
+
+Mathematics and English are exempt from the intervening-day rule. Literature follows its pairing rule: four weekly periods occupy exactly two sessions, which may fall on consecutive days. An odd weekly literature total allows exactly one unpaired period. A single literature period may temporarily stand alone while a timetable is being edited.
+
+For a teacher assigned exactly one session, two periods of a low-frequency subject may share that session. They must remain nonadjacent unless they are literature or one of the two opposite-shift subjects.
+
+### Search preferences and limitations
+
+The scheduler initially tries, for up to **eight seconds**, to place at most one mathematics period per class per session and pair experiential-activity classes taught by the same teacher. Two classes can share a teacher's session by using periods 1–2 and 3–4.
+
+If this search does not find a timetable, the scheduler relaxes these preferences while keeping all mandatory constraints and locks. It also considers reducing teacher gaps, but stops at the first valid solution; it does **not** guarantee an optimal timetable.
+
+Results identify sessions with two mathematics periods and teachers whose experiential-activity classes remain unpaired. These counts are not guaranteed to be minimal. A timetable is reported as infeasible only when the solver proves that the constraints cannot all be satisfied.
+
+## Generating and editing a timetable
+
+Select **Tạo thời khóa biểu** (Generate timetable) to start the CP-SAT solver. Progress shows elapsed time; completion time cannot be predicted. Each generated timetable must pass an independent validator before it is displayed.
+
+Select **Dừng xếp lịch** (Stop scheduling) to cancel the search and keep the current timetable. If generation fails, review assignment counts, teacher session rules, fixed activities, time off, and locked lessons.
+
+For manual editing:
+
+- **Place a lesson:** select a shift, then drag an unplaced lesson card into its class column and period, or select the card followed by a cell.
+- **Move a lesson:** drag an unlocked lesson into an empty cell.
+- **Remove a lesson:** use **×** to return it to the unplaced list.
+- **Lock a lesson:** double-click an occupied cell or use its lock button. Locked lessons stay in place during regeneration; unlocked lessons may move.
+- **Swap lessons:** in the class timetable view, select two cells to exchange their lessons.
+- **Change a fixed activity:** edit it in the school week setup.
+
+The latest **15 timetable versions** are stored with the account after generation or editing. A version can be restored only if its classes, teachers, assignments, and fixed activities still match the current input data.
+
+## Exporting schedules
+
+| Action | Output |
+| --- | --- |
+| **Xuất CSV đang xem** (Export current CSV) | The selected class or teacher timetable |
+| **Xuất Excel toàn trường** (Export whole-school Excel) | An `.xlsx` workbook with one worksheet per grade, classes side by side, and separate morning and afternoon sections |
+| **In / PDF** (Print / PDF) | The current view, using the browser's print or save-to-PDF option |
+
+Classes without a recognized grade appear on a separate worksheet. Exports reflect the current timetable; unplaced lessons are not included.
+
+## Accounts, storage, and backups
+
+Register with a 3–40-character username without accents and a password of at least 10 characters. The first account created in a database receives a copy of any legacy application data. Later accounts have separate data.
+
+A new login invalidates the account's previous session immediately on the server. The previous interface reports this on its next request or periodic session check. Password reset is not supported.
+
+The status bar reports database connectivity and save results. If a connection fails, temporary data remains in the browser. Existing browser data is transferred to the database when no account data is stored there. If local unsynchronized data conflicts with database data, synchronization pauses to avoid overwriting either copy. Back up and resolve the conflicting data before continuing.
+
+Back up SQL Server regularly for important data.
+
+The application currently listens only on localhost. Access from other devices requires a shared deployment with HTTPS and corresponding server and security configuration changes.
+
+## Legacy data
+
+When older six-day-week data is loaded:
+
+- Saturday lessons return to the unplaced list.
+- Saturday fixed activities are removed and must be assigned a new day if still needed.
+- Timetable versions containing Saturday lessons remain available for reference but cannot be restored.
