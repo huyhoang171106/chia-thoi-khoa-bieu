@@ -1,0 +1,20 @@
+const {readFileSync}=require('node:fs');
+const {runInNewContext}=require('node:vm');
+const assert=require('node:assert/strict');
+const source=readFileSync('public/app.js','utf8').split(/\r?\n/);
+const save=source.find(line=>line.startsWith('function save('));
+const handler=source.find(line=>line.startsWith("document.addEventListener('change',"));
+let onChange, confirmed=true, saved;
+const locked={teacher:'Lan',className:'9/1',day:0,period:1,locked:true};
+const otherLocked={teacher:'Mai',className:'9/2',day:1,period:2,locked:true};
+const unlocked={teacher:'Lan',className:'9/1',day:2,period:3,locked:false};
+const state={teachers:[{name:'Lan',sessionRule:'5'}],schedule:[locked,unlocked,otherLocked],assignments:[]};
+const context={state,activeUser:{id:1},storageReady:false,storageKey:()=> 'cache',dirtyKey:()=> 'dirty',localStorage:{setItem(){}},writeLocalState:(storage,key,value)=>saved=JSON.parse(value),refreshBackupBox(){},stats(){},renderData(){},document:{addEventListener:(_,fn)=>onChange=fn},confirm:()=>confirmed,alert(){}};
+runInNewContext(save+'\n'+handler,context);
+function change(value){const target={dataset:{kind:'teachers',index:'0',field:'sessionRule'},value};onChange({target});return target}
+change('5');assert.equal(state.schedule.length,3);
+confirmed=false;assert.equal(change('2').value,'5');assert.equal(state.schedule.length,3);
+confirmed=true;change('2');assert.equal(state.teachers[0].sessionRule,'2');
+assert.deepEqual(Array.from(state.schedule),[locked,otherLocked]);
+assert.deepEqual(saved.schedule,[locked,otherLocked]);
+console.log('Teacher rule changes preserve and save locked lessons.');
