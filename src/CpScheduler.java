@@ -40,7 +40,7 @@ final class CpScheduler {
     List<Map<String,Object>> expected=Main.Scheduler.list(input,"assignments");
     List<Map<String,Object>> schedule=Main.Scheduler.list(result,"schedule");
     Map<List<String>,Integer> expectedCounts=new HashMap<>(),actualCounts=new HashMap<>();
-    for(Map<String,Object> a:expected)expectedCounts.merge(List.of(Main.Scheduler.s(a,"className"),Main.Scheduler.s(a,"teacher"),Main.Scheduler.s(a,"subject")),Main.Scheduler.n(a,"periods",0),Integer::sum);
+    for(Map<String,Object> a:expected)expectedCounts.merge(List.of(Main.Scheduler.s(a,"className"),Main.Scheduler.s(a,"teacher"),Main.Scheduler.s(a,"subject")),Main.Scheduler.assignmentPeriods(a),Integer::sum);
     List<Map<String,Object>> locks=new ArrayList<>();
     for(Map<String,Object> lesson:schedule){if(Main.Scheduler.s(lesson,"teacher").isEmpty())continue;actualCounts.merge(List.of(Main.Scheduler.s(lesson,"className"),Main.Scheduler.s(lesson,"teacher"),Main.Scheduler.s(lesson,"subject")),1,Integer::sum);Map<String,Object> lock=new HashMap<>(lesson);lock.put("locked",true);locks.add(lock);}
     if(!expectedCounts.equals(actualCounts))throw new IOException("Kết quả xếp lịch không đủ hoặc thừa tiết so với phân công.");

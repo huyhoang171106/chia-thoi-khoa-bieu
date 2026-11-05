@@ -10,7 +10,7 @@ function setup(){
   let resolveFetch,fetchArgs;const request=new Promise(resolve=>resolveFetch=resolve);
   const context={activeUser:null,storageReady:false,state:{},saveQueue:Promise.resolve(),defaults:()=>({}),dirtyKey:()=>'',localStorage:{getItem:()=>null},confirm:()=>true,
     $:get,window:{addEventListener(){}},document:{body:{classList:{add:(...names)=>names.forEach(x=>classes.add(x)),remove:(...names)=>names.forEach(x=>classes.delete(x))}},querySelectorAll:()=>[],addEventListener(){},hidden:false},
-    fetch:(...args)=>{fetchArgs=args;return request},setInterval(){},storageStatus(){}};
+    fetch:(...args)=>{fetchArgs=args;return request},setInterval(){},storageStatus(){},hideSyncConflict(){},backupBox:{hidden:false}};
   context.init=async (user,preloaded)=>{context.activeUser=user;context.loaded=preloaded};
   runInNewContext(code,context);
   return {context,classes,get,resolveFetch,getFetch:()=>fetchArgs};

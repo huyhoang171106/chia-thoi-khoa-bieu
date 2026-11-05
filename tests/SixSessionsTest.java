@@ -6,7 +6,7 @@ public class SixSessionsTest {
     Map<String,Object> input=new HashMap<>();
     input.put("classes",List.of(Map.of("name","6/1","shift","morning"),Map.of("name","7/1","shift","afternoon")));
     input.put("teachers",List.of(Map.of("name","Lan","sessionRule","6")));
-    input.put("assignments",List.of(Map.of("className","6/1","teacher","Lan","subject","Toán","periods",3),Map.of("className","7/1","teacher","Lan","subject","Toán","periods",3)));
+    input.put("assignments",List.of(Map.of("className","6/1","teacher","Lan","subject","Toán","periods",3),Map.of("className","7/1","teacher","Lan","subject","Toán","periods",3),Map.of("className","6/1","teacher","Lan","subject","Sử","periods",3),Map.of("className","7/1","teacher","Lan","subject","Sử","periods",3)));
     input.put("events",List.of());List<Map<String,Object>> locked=new ArrayList<>();for(int d=0;d<3;d++){locked.add(lock("6/1","morning",d));locked.add(lock("7/1","afternoon",d));}input.put("schedule",locked);
     Map<String,Object> result=CpScheduler.run(input,ignored->{});if(!Boolean.TRUE.equals(result.get("ok")))throw new AssertionError(result);
     Set<String> sessions=new HashSet<>();for(Map<String,Object> row:Main.Scheduler.list(result,"schedule"))if("Lan".equals(row.get("teacher")))sessions.add(row.get("shift")+":"+row.get("day"));

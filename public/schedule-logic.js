@@ -8,7 +8,7 @@
   function subjectKey(subject){return String(subject||'').toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]/g,'')}
   function extraKind(subject){const name=subjectKey(subject);return name==='hoatdongtrainghiem'?1:name==='theduc'?2:0}
   function literature(subject){return ['van','nguvan'].includes(subjectKey(subject))}
-  function subjectGroup(subject){return literature(subject)?'van':String(subject||'').toLocaleLowerCase('vi')}
+  function subjectGroup(subject){const key=subjectKey(subject);return key==='nguvan'?'van':key==='tienganh'?'anh':key}
   function flexibleDays(subject){return ['toan','anh','tienganh'].includes(subjectKey(subject))}
   function literatureError(items,className,total,partial){
     const groups=new Map();for(const x of items){const key=JSON.stringify([x.shift,x.day]),group=groups.get(key)||[];group.push(x.period);groups.set(key,group)}
@@ -21,6 +21,7 @@
     for(const [className,items] of classes){const total=(assignments||[]).filter(a=>a.className===className&&literature(a.subject)).reduce((sum,a)=>sum+Number(a.periods||0),0),error=literatureError(items,className,total,partial);if(error)return error}return '';
   }
   function validate(schedule,teachers,assignments,options={}){
+    if(assignments.some(a=>!Number.isInteger(Number(a.periods))||Number(a.periods)<1||Number(a.periods)>30||typeof a.periods==='boolean'))return 'Số tiết trong phân công phải là số nguyên từ 1 đến 30.';
     const occupied=new Set(), teacherSlots=new Set(), loads=new Map(), teacherPeriods=new Map(), classDays=new Map(), subjects=new Map(),extra=new Map();
     for(const x of schedule){
       if(!Number.isInteger(x.day)||x.day<0||x.day>4||!Number.isInteger(x.period)||x.period<1||x.period>5)return 'Chỉ xếp lịch từ thứ Hai đến thứ Sáu, tiết 1–5.';
@@ -49,14 +50,18 @@
         if(count<3&&!flexibleDays(subject)){const single=a.teacher===b.teacher&&a.day===b.day&&a.shift===b.shift&&sessionRange(teachers.find(t=>t.name===a.teacher)).max===1;if(!single&&Math.abs(a.day-b.day)<2)return `Môn ${subject} của lớp ${className} cần cách nhau ít nhất 1 ngày ở giữa.`;}
       }
     }
+    if(!options.partial){
+      for(const teacher of teachers){if(!assignments.some(a=>a.teacher===teacher.name))continue;const min=sessionRange(teacher).min;if((loads.get(teacher.name)?.size||0)<min)return `Giáo viên ${teacher.name} chưa đủ số buổi dạy đã chọn (ít nhất ${min} buổi/tuần).`;}
+      for(const [key,periods] of teacherPeriods)if(periods.length<2)return `Giáo viên ${JSON.parse(key)[0]} phải dạy ít nhất 2 tiết trong mỗi buổi.`;
+    }
     return '';
   }
-  function move(state,className,fromDay,fromPeriod,toDay,toPeriod,shift){
+  function move(state,className,fromDay,fromPeriod,toDay,toPeriod,shift,options={}){
     const schedule=state.schedule.map(x=>({...x}));const source=schedule.find(x=>x.className===className&&(!shift||x.shift===shift)&&x.day===fromDay&&x.period===fromPeriod);const target=schedule.find(x=>x.className===className&&(!shift||x.shift===shift)&&x.day===toDay&&x.period===toPeriod);
     if(!source)return {error:'Hãy chọn một tiết học để di chuyển.'};if(!source.teacher||target&&!target.teacher)return {error:'Không thể di chuyển hoạt động cố định. Hãy sửa trong Thiết lập tuần học.'};if(source.locked||target?.locked)return {error:'Hãy mở khóa tiết trước khi di chuyển.'};
     if(fromDay===toDay&&fromPeriod===toPeriod)return {error:'Hãy chọn một ô khác.'};
     if(target){target.day=fromDay;target.period=fromPeriod}source.day=toDay;source.period=toPeriod;
-    const error=validate(schedule,state.teachers,state.assignments);return error?{error}:{schedule};
+    const error=validate(schedule,state.teachers,state.assignments,options);return error?{error}:{schedule};
   }
   return {inputSignature,versionSignature,validate,move,extraKind,teacherKey,sessionRange,trimSaturday,literatureRuleIssue};
 });

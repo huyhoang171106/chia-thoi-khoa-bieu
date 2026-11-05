@@ -31,6 +31,33 @@ class TimetableSolverTest(unittest.TestCase):
         for day in {x['day'] for x in result['schedule']}:
             self.assertGreaterEqual(sum(x['day'] == day for x in result['schedule']), 2)
 
+    def test_math_aliases_cannot_bypass_adjacent_lesson_rule(self):
+        for alias in ('Toan', 'Toa\u0301n', ' TOÁN '):
+            with self.subTest(alias=alias):
+                state = self.fixture(periods=1, session_rule='1')
+                state['assignments'].append(dict(className='9/1', teacher='Lan', subject=alias, periods=1))
+                self.assertEqual(cp_scheduler.solve(state, time_limit=10)['status'], 'infeasible')
+                state['events'] = [dict(name='Sinh hoạt', shift='morning', day=0, period=2)]
+                result = cp_scheduler.solve(state, time_limit=10)
+                self.assertTrue(result['ok'], result)
+                self.assertEqual(sorted(x['period'] for x in result['schedule'] if x['teacher']), [1, 3])
+
+    def test_subject_aliases_share_weekly_total(self):
+        state = self.fixture(subject='Lý', periods=1, session_rule='3')
+        state['assignments'] += [dict(className='9/1', teacher='Lan', subject=s, periods=1) for s in ('Ly', 'Ly\u0301')]
+        state['assignments'].append(dict(className='9/1', teacher='Lan', subject='Toán', periods=3))
+        state['schedule'] = [dict(className='9/1', teacher='Lan', subject=s, shift='morning', day=d, period=1, locked=True)
+                             for d, s in enumerate(('Lý', 'Ly', 'Ly\u0301'))]
+        self.assertTrue(cp_scheduler.solve(state, time_limit=10)['ok'])
+
+    def test_period_count_must_be_an_integer(self):
+        for value in (2.5, '2.5', 0, 31, True, None, float('nan'), float('inf')):
+            with self.subTest(periods=value):
+                with self.assertRaisesRegex(ValueError, 'số nguyên'):
+                    cp_scheduler.solve(self.fixture(subject='Văn', periods=value, session_rule='1'), time_limit=10)
+        for value in (2, 2.0, '2'):
+            self.assertTrue(cp_scheduler.solve(self.fixture(subject='Văn', periods=value, session_rule='1'), time_limit=10)['ok'])
+
     def test_one_lesson_sessions_are_infeasible(self):
         result = cp_scheduler.solve(self.fixture(), time_limit=10)
         self.assertEqual(result['status'], 'infeasible')

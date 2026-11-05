@@ -8,7 +8,7 @@ Tại thư mục gốc chạy `npm run dev`, sau đó mở http://localhost:3000
 
 Ứng dụng lưu dữ liệu vào SQL Server thông qua Windows PowerShell và `System.Data.SqlClient` có sẵn trên Windows. Tạo database trước và điền `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` vào `.env`; tài khoản cần quyền đọc, ghi và tạo bảng trong database. Kết nối tới `localhost` hoặc `127.0.0.1` tin cậy chứng chỉ của máy chủ cục bộ; với máy chủ khác cần chứng chỉ đáng tin cậy. Bảng `dbo.LichTruongState` được tạo tự động khi kết nối lần đầu. Hỗ trợ SQL Server Authentication. Thanh trạng thái trên web báo kết nối và kết quả lưu; nếu kết nối lỗi, dữ liệu tạm còn trong trình duyệt. Khi database chưa có dữ liệu, dữ liệu sẵn có trên trình duyệt sẽ được chuyển vào database. Nếu cả database và trình duyệt đều có dữ liệu chưa đồng bộ, ứng dụng dừng đồng bộ để tránh ghi đè; cần sao lưu và xử lý dữ liệu trước khi tiếp tục.
 
-Nhập một dòng phân công cho từng giáo viên dạy một môn của một lớp. Các dòng cùng tên môn được xét chung khi ưu tiên phân bố tiết. Hoạt động cố định điều chỉnh tại Thiết lập tuần học. Xuất CSV để mở bằng Excel, hoặc dùng In / PDF để lưu lịch đang xem thành PDF.
+Nhập một dòng phân công cho từng giáo viên dạy một môn của một lớp. Các dòng cùng môn được xét chung khi áp dụng ràng buộc và phân bố tiết; tên môn được chuẩn hóa dấu, chữ hoa/thường và khoảng trắng (Văn/Ngữ văn, Anh/Tiếng Anh được tính chung). Số tiết mỗi phân công phải là số nguyên từ 1 đến 30. Hoạt động cố định điều chỉnh tại Thiết lập tuần học. Xuất CSV để mở bằng Excel, hoặc dùng In / PDF để lưu lịch đang xem thành PDF.
 
 Tại màn hình thời khóa biểu, **Xuất CSV đang xem** tải lịch của lớp hoặc giáo viên đang chọn. **Xuất Excel toàn trường** tạo file `.xlsx`, mỗi khối là một trang tính với các lớp đặt cạnh nhau, chia buổi sáng và chiều. Lớp chưa xác định được khối được đưa vào trang riêng. File phản ánh lịch hiện tại; các tiết chưa xếp chưa xuất hiện trong file.
 
@@ -30,7 +30,7 @@ Trong màn hình thời khóa biểu, mỗi tiết chưa xếp xuất hiện th�
 
 Nên sao lưu SQL Server cho dữ liệu quan trọng.
 
-Khi tạo lịch tự động, mỗi buổi sáng hoặc chiều có dạy của giáo viên phải có ít nhất 2 tiết, kể cả buổi trái. Nếu không xếp được, hãy kiểm tra số tiết phân công, số buổi đã chọn và các tiết khóa.
+Khi tạo lịch tự động hoặc chỉnh một lịch đã xếp đủ tiết, số buổi của giáo viên phải đúng quy định đã chọn và mỗi buổi sáng hoặc chiều có dạy phải có ít nhất 2 tiết, kể cả buổi trái. Khi đang xếp dở, hai yêu cầu tối thiểu này được kiểm tra lúc đặt đủ tiết. Nếu không xếp được, hãy kiểm tra số tiết phân công, số buổi đã chọn và các tiết khóa.
 
 Nút **Tạo thời khóa biểu** sử dụng CP-SAT của Google OR-Tools. Cần Python và chạy `python -m pip install --target build/vendor ortools` một lần trong thư mục dự án. Hệ thống tìm lịch hợp lệ hoặc báo khi chứng minh được các điều kiện mâu thuẫn. Thanh trạng thái hiển thị thời gian đã chạy; không thể dự đoán chính xác thời gian hoàn tất. Có thể nhấn **Dừng xếp lịch** để giữ lịch đang có. Một lịch tìm được phải vượt qua bộ kiểm tra độc lập trước khi hiển thị.
 

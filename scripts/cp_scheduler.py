@@ -18,6 +18,22 @@ def extra_kind(subject):
     return {'hoatdongtrainghiem': 1, 'theduc': 2}.get(subject_key(subject), 0)
 
 
+def subject_group(subject):
+    key = subject_key(subject)
+    return {'nguvan': 'van', 'tienganh': 'anh'}.get(key, key)
+
+
+def period_count(assignment):
+    value = assignment.get('periods')
+    try:
+        count = float(value) if not isinstance(value, bool) else float('nan')
+    except (ValueError, TypeError):
+        count = float('nan')
+    if not count.is_integer() or not 1 <= count <= 30:
+        raise ValueError('Số tiết trong phân công phải là số nguyên từ 1 đến 30.')
+    return int(count)
+
+
 def session_conflicts(classes, teachers, assignments, single_math=False):
     """Return necessary lower bounds; never treat these as a full feasibility test."""
     class_by_name = {c['name']: c for c in classes}
@@ -35,7 +51,7 @@ def session_conflicts(classes, teachers, assignments, single_math=False):
             shift = c['shift']
             if kind:
                 shift = 'afternoon' if shift == 'morning' else 'morning'
-            periods = int(a.get('periods', 0))
+            periods = period_count(a)
             per_shift[shift] += periods
             if kind:
                 extra_periods[shift] += periods
@@ -69,6 +85,8 @@ def solve(state, time_limit=None, require_extra_pairing=False):
     teacher_by_name = {t['name']: t for t in teachers}
     if len(class_by_name) != len(classes) or len(teacher_by_name) != len(teachers):
         raise ValueError('Tên lớp hoặc giáo viên bị trùng.')
+    for assignment in assignments:
+        period_count(assignment)
     conflicts = session_conflicts(classes, teachers, assignments)
     if conflicts:
         details = '; '.join(f'{name}: ít nhất {morning} buổi sáng + {afternoon} buổi chiều, tối đa {maximum} buổi'
@@ -96,9 +114,7 @@ def solve(state, time_limit=None, require_extra_pairing=False):
         subject = assignment.get('subject', '')
         if cname not in class_by_name or tname not in teacher_by_name or not subject:
             raise ValueError('Kiểm tra lớp, giáo viên và môn trong phân công.')
-        periods = int(assignment.get('periods', 0))
-        if not 1 <= periods <= 30:
-            raise ValueError('Số tiết trong phân công phải từ 1 đến 30.')
+        periods = period_count(assignment)
         kind = extra_kind(subject)
         main_shift = class_by_name[cname]['shift']
         shift = shifts[1 - shifts.index(main_shift)] if kind else main_shift
@@ -117,7 +133,7 @@ def solve(state, time_limit=None, require_extra_pairing=False):
                 by_class[cname, shift, day, period].append(var)
                 by_teacher[tname, shift, day, period].append(var)
                 if not kind:
-                    group = 'van' if subject_key(subject) in ('van', 'nguvan') else subject.strip().lower()
+                    group = subject_group(subject)
                     by_subject[cname, group].append((ai, day, period, var))
         model.add(sum(choices) == periods)
     if extras and any(set(extras[c['name']]) != {1, 2} for c in classes):
@@ -132,7 +148,7 @@ def solve(state, time_limit=None, require_extra_pairing=False):
             shift = class_by_name[assignment['className']]['shift']
             if extra_kind(assignment['subject']):
                 shift = shifts[1 - shifts.index(shift)]
-            periods_by_shift[shift] += int(assignment['periods'])
+            periods_by_shift[shift] += period_count(assignment)
         total = sum(periods_by_shift.values())
         rule = str(teacher.get('sessionRule') or 'standard')
         minimum = 4 if rule == 'standard' else int(rule)
@@ -222,9 +238,8 @@ def solve(state, time_limit=None, require_extra_pairing=False):
     for (cname, subject), rows in by_subject.items():
         key = subject_key(subject)
         is_literature = key in ('van', 'nguvan')
-        subject_total = sum(int(a['periods']) for a in assignments if a['className'] == cname and
-                            (subject_key(a['subject']) in ('van', 'nguvan') if is_literature
-                             else a['subject'].strip().lower() == subject))
+        subject_total = sum(period_count(a) for a in assignments if a['className'] == cname and
+                            subject_group(a['subject']) == subject)
         flexible = key in ('toan', 'anh', 'tienganh')
         for ai, day, period, var in rows:
             if flexible:

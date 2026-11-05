@@ -1,11 +1,11 @@
 const assert=require('node:assert/strict'),logic=require('../public/schedule-logic.js');
 const item=(day,period,subject='Văn')=>({className:'6/1',shift:'morning',day,period,subject,teacher:'Lan'});
 const teachers=[{name:'Lan',sessionRule:'3'}],assignment=periods=>[{className:'6/1',subject:'Ngữ văn',teacher:'Lan',periods}];
-assert.equal(logic.validate([item(0,1),item(0,2,'Ngữ văn'),item(2,2),item(2,3)],teachers,assignment(4)),'');
+assert.equal(logic.validate([item(0,1),item(0,2,'Ngữ văn'),item(2,2),item(2,3)],[{name:'Lan',sessionRule:'2'}],assignment(4)),'');
 assert.equal(logic.validate([item(0,1),item(0,2),item(1,1),item(1,2)],teachers,assignment(4),{partial:true}),'');
 assert.match(logic.validate([item(0,1),item(0,3)],teachers,assignment(4),{partial:true}),/phải liền nhau/);
 assert.match(logic.validate([item(0,1),item(0,2),item(2,1),item(4,1)],teachers,assignment(4)),/ghép thành từng cặp/);
-assert.equal(logic.validate([item(0,1),item(0,2),item(2,1),item(2,2),item(4,1)],teachers,assignment(5)),'');
+assert.equal(logic.validate([item(0,1),item(0,2),item(2,1),item(2,2),item(4,1),item(4,2,'Sử')],teachers,[...assignment(5),{className:'6/1',subject:'Sử',teacher:'Lan',periods:1}]),'');
 assert.equal(logic.validate([item(0,1)],teachers,assignment(4),{partial:true}),'');
 assert.equal(logic.literatureRuleIssue([item(0,1),item(1,1)],assignment(4),true),'');
 assert.equal(logic.literatureRuleIssue([item(0,1)],assignment(4),true),'');

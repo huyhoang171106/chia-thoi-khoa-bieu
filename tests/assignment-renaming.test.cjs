@@ -15,3 +15,10 @@ onChange({target:{dataset:{kind:'classes',index:'0',field:'name'},value:'9/2'}})
 assert.equal(state.assignments[0].className,'');
 const duplicate={dataset:{kind:'teachers',index:'0',field:'name'},value:'  CÔ   LAN ANH  '};onChange({target:duplicate});assert.equal(state.teachers[0].name,'Cô Mai');assert.equal(duplicate.value,'Cô Mai');assert.match(warning,/đã có/);
 console.log('Empty assignments stay unassigned; existing teacher renames propagate.');
+
+state.assignments[0].periods=2;
+for(const value of ['2.5','0','31','']){
+  const input={dataset:{kind:'assignments',index:'0',field:'periods'},value};
+  onChange({target:input});assert.equal(state.assignments[0].periods,2);assert.equal(input.value,2);assert.match(warning,/số nguyên/);
+}
+onChange({target:{dataset:{kind:'assignments',index:'0',field:'periods'},value:'3'}});assert.equal(state.assignments[0].periods,3);

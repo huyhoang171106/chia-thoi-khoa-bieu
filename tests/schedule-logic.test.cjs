@@ -1,10 +1,11 @@
 const assert=require('node:assert/strict');
 const logic=require('../public/schedule-logic.js');
 assert.deepEqual(logic.sessionRange({sessionRule:'6'}),{min:6,max:6});assert.deepEqual(logic.sessionRange({}),{min:4,max:5});
-const initial={classes:[{name:'6/1',shift:'morning'},{name:'6/2',shift:'morning'}],teachers:[{name:'Lan',maxSessions:3},{name:'Minh',maxSessions:3}],subjects:[],events:[],assignments:[{className:'6/1',subject:'Toán',periods:3},{className:'6/1',subject:'Văn',periods:3},{className:'6/2',subject:'Anh',periods:3}],schedule:[
+const initial={classes:[{name:'6/1',shift:'morning'},{name:'6/2',shift:'morning'},{name:'6/3',shift:'morning'}],teachers:[{name:'Lan',sessionRule:'1'},{name:'Minh',sessionRule:'1'}],subjects:[],events:[],assignments:[{className:'6/1',teacher:'Lan',subject:'Toán',periods:1},{className:'6/1',teacher:'Minh',subject:'Văn',periods:1},{className:'6/2',teacher:'Lan',subject:'Anh',periods:1},{className:'6/3',teacher:'Minh',subject:'Sử',periods:1}],schedule:[
   {className:'6/1',shift:'morning',day:0,period:1,subject:'Toán',teacher:'Lan'},
   {className:'6/1',shift:'morning',day:0,period:2,subject:'Văn',teacher:'Minh'},
   {className:'6/2',shift:'morning',day:0,period:3,subject:'Anh',teacher:'Lan'},
+  {className:'6/3',shift:'morning',day:0,period:3,subject:'Sử',teacher:'Minh'},
   {className:'6/1',shift:'morning',day:1,period:1,subject:'Chào cờ',teacher:''}
 ]};
 assert.equal(logic.validate(initial.schedule,initial.teachers,initial.assignments),'');
@@ -21,7 +22,7 @@ const gapAssignments=[{className:'6/1',subject:'Toán',periods:1},{className:'6/
 assert.equal(logic.validate(gapTeacher,gapTeachers,gapAssignments),'');
 gapTeacher[1].period=4;assert.match(logic.validate(gapTeacher,gapTeachers,gapAssignments),/hơn 1 tiết trống/);
 assert.equal(logic.validate(gapTeacher,gapTeachers,gapAssignments,{partial:true}),'');
-gapTeacher[1].shift='afternoon';gapTeachers[0].sessionRule='2';assert.equal(logic.validate(gapTeacher,gapTeachers,gapAssignments),'');
+gapTeacher[1].shift='afternoon';gapTeachers[0].sessionRule='2';gapTeacher.push({className:'6/3',shift:'morning',day:0,period:2,subject:'Sử',teacher:'Lan'},{className:'6/4',shift:'afternoon',day:0,period:5,subject:'Địa',teacher:'Lan'});assert.equal(logic.validate(gapTeacher,gapTeachers,gapAssignments),'');
 function two(subject,day,period,count=2){const records=[{className:'9/1',shift:'morning',day:0,period:1,subject,teacher:'Lan'},{className:'9/1',shift:'morning',day,period,subject,teacher:'Lan'}];return logic.validate(records,[{name:'Lan',sessionRule:day===0?'1':'2'}],[{className:'9/1',subject,periods:count}],{partial:true})}
 assert.equal(two('Toán',1,1),'');assert.equal(two('Tiếng Anh',1,1),'');assert.equal(two('Ngữ văn',0,2),'');
 assert.equal(two('Lịch sử',2,1),'');
