@@ -47,6 +47,15 @@ class Rules(unittest.TestCase):
         self.assertEqual(impossible['status'], 'infeasible')
         self.assertIn('Lan', impossible['message'])
 
+    def test_intermediate_timetables_are_valid(self):
+        data = school([('9/1', 'morning')], [{'name': 'Lan', 'sessionRule': '2'}],
+                      [assign('9/1', 'Toán', 2), assign('9/1', 'Sử', 2)])
+        found = []
+        self.assertTrue(solver.run(data, report=found.append).get('ok'))
+        self.assertTrue(found)
+        for result in found:
+            validator.check_result(data, result)
+
     def test_legacy_closed_days_are_ignored(self):
         data = school([('6/1', 'morning')], [{'name': 'Lan', 'maxSessions': 6}],
                       [assign('6/1', 'Toán', 4), assign('6/1', 'Sử', 4)],

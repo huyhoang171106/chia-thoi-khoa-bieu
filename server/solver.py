@@ -8,6 +8,10 @@ from pathlib import Path
 
 # Seconds spent improving the first valid timetable (fewer sessions, fewer gaps).
 IMPROVE_SECONDS = 20
+# Stop improving once this many seconds pass without a better timetable.
+STALL_SECONDS = 3
+# Seconds between improved timetables sent to the page while the search continues.
+REPORT_SECONDS = 2
 # One teaching session costs as much as five teacher gaps.
 SESSION_COST = 100
 
@@ -77,26 +81,37 @@ def session_conflicts(classes, teachers, assignments, single_math=False):
     return conflicts
 
 
-def search(solver, model, cancel):
-    """Run one CP-SAT search; setting `cancel` (a threading.Event) stops it early."""
-    if cancel is None:
-        return solver.solve(model)
+def search(solver, model, cancel, stall=None, snapshot=None):
+    """Run one CP-SAT search; setting `cancel` (a threading.Event) stops it early,
+    and so does going `stall` seconds without finding a better solution.
+    `snapshot(callback)` sees an improved solution at most every REPORT_SECONDS."""
+    from ortools.sat.python import cp_model
     done = threading.Event()
+    last = [time.monotonic()]
+    reported = [time.monotonic()]
+
+    class Progress(cp_model.CpSolverSolutionCallback):
+        def on_solution_callback(self):
+            last[0] = time.monotonic()
+            if snapshot is not None and last[0] - reported[0] >= REPORT_SECONDS:
+                reported[0] = last[0]
+                snapshot(self)
 
     def watch():
-        while not done.wait(0.2):
-            if cancel.is_set():
+        while not done.wait(0.1):
+            if cancel is not None and cancel.is_set() or stall is not None and time.monotonic() - last[0] > stall:
                 solver.stop_search()
                 return
 
     threading.Thread(target=watch, daemon=True).start()
     try:
-        return solver.solve(model)
+        return solver.solve(model) if stall is None and snapshot is None else solver.solve(model, Progress())
     finally:
         done.set()
 
 
-def solve(state, time_limit=None, require_extra_pairing=False, cancel=None):
+def solve(state, time_limit=None, require_extra_pairing=False, cancel=None, report=None):
+    """`report(result)` receives each better valid timetable found before the final one."""
     from ortools.sat.python import cp_model
 
     classes = state.get('classes', [])
@@ -374,6 +389,48 @@ def solve(state, time_limit=None, require_extra_pairing=False, cancel=None):
                 hinted.add(key)
                 break
 
+    def result(values):
+        schedule = []
+        for (ai, day, period), value in values.items():
+            if not value:
+                continue
+            a = assignments[ai]
+            shift = class_by_name[a['className']]['shift']
+            if extra_kind(a['subject']):
+                shift = shifts[1 - shifts.index(shift)]
+            schedule.append({'className': a['className'], 'shift': shift, 'day': day,
+                             'period': period, 'subject': a['subject'], 'teacher': a['teacher'],
+                             'locked': (a['className'], shift, day, period) in locked})
+        for cname, shift, day, period in fixed:
+            event = next(e for e in events if e['shift'] == shift and int(e['day']) == day and int(e['period']) == period)
+            schedule.append({'className': cname, 'shift': shift, 'day': day, 'period': period,
+                             'subject': event['name'], 'teacher': ''})
+        math_sessions = defaultdict(int)
+        experience_sessions = defaultdict(lambda: defaultdict(set))
+        for lesson in schedule:
+            if not lesson.get('teacher'):
+                continue
+            key = subject_key(lesson['subject'])
+            if key == 'toan':
+                math_sessions[lesson['className'], lesson['shift'], lesson['day']] += 1
+            if key == 'hoatdongtrainghiem':
+                experience_sessions[lesson['teacher'], lesson['shift']][lesson['day']].add(lesson['className'])
+        math_double_count = sum(count == 2 for count in math_sessions.values())
+        split_teachers = []
+        for (teacher, shift), days in experience_sessions.items():
+            count = sum(len(classes) for classes in days.values())
+            if count >= 2 and len(days) > (count + 1) // 2:
+                split_teachers.append(f'{teacher} ({"sáng" if shift == "morning" else "chiều"})')
+        notes = []
+        if math_double_count:
+            notes.append(f'l\u1ecbch n\u00e0y c\u00f3 {math_double_count} bu\u1ed5i h\u1ecdc 2 ti\u1ebft To\u00e1n; ch\u01b0a x\u00e1c \u0111\u1ecbnh \u0111\u01b0\u1ee3c c\u00f3 th\u1ec3 gi\u1ea3m th\u00eam hay kh\u00f4ng')
+        if split_teachers:
+            notes.append('ch\u01b0a gh\u00e9p h\u1ebft c\u00e1c l\u1edbp Ho\u1ea1t \u0111\u1ed9ng tr\u1ea3i nghi\u1ec7m cho ' + ', '.join(split_teachers))
+        message = 'Đã tìm được lịch hợp lệ.' + (' Lưu ý: ' + '; '.join(notes) + '.' if notes else '')
+        return {'ok': True, 'status': 'feasible', 'schedule': schedule, 'message': message,
+                'singleMath': math_double_count == 0, 'pairedExperience': not split_teachers,
+                'mathDoubleCount': math_double_count, 'unpairedExperience': split_teachers}
+
     compact_weight = (800 + 10 * SESSION_COST) * len(teachers) + 1
     pairing_bound = sum(len(group) for group in experience_groups.values())
     # Double math sessions and unpaired experience classes always outweigh sessions and gaps.
@@ -409,7 +466,13 @@ def solve(state, time_limit=None, require_extra_pairing=False, cancel=None):
     values = {}
     if status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
         values = {key: solver.value(var) for key, var in variables.items()}
+    snapshot = None
+    if report is not None:
+        def snapshot(callback):
+            report(result({key: callback.value(var) for key, var in variables.items()}))
     if values:
+        if report is not None:
+            report(result(values))
         # The first solution only proves feasibility. Starting from it, spend a
         # bounded budget improving it in two stages: first the dominant terms
         # (double math sessions, unpaired experience classes) on their own, which
@@ -428,7 +491,7 @@ def solve(state, time_limit=None, require_extra_pairing=False, cancel=None):
                 model.add_hint(var, values[key])
             model.minimize(goal)
             solver.parameters.max_time_in_seconds = left * share
-            if search(solver, model, cancel) in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+            if search(solver, model, cancel, STALL_SECONDS, snapshot) in (cp_model.FEASIBLE, cp_model.OPTIMAL):
                 values = {key: solver.value(var) for key, var in variables.items()}
                 if goal is primary:
                     model.add(primary <= round(solver.objective_value))
@@ -436,52 +499,13 @@ def solve(state, time_limit=None, require_extra_pairing=False, cancel=None):
         return {'ok': False, 'status': 'infeasible', 'message': 'Các quy định và phân công không thể thỏa đồng thời, bao gồm yêu cầu mỗi buổi dạy ít nhất 2 tiết. Hãy kiểm tra số buổi, phân công và các tiết khóa.'}
     if status not in (cp_model.FEASIBLE, cp_model.OPTIMAL):
         return {'ok': False, 'status': 'unknown', 'message': 'Chưa xác định được lịch hợp lệ hay vô nghiệm.'}
-    schedule = []
-    for (ai, day, period), value in values.items():
-        if not value:
-            continue
-        a = assignments[ai]
-        shift = class_by_name[a['className']]['shift']
-        if extra_kind(a['subject']):
-            shift = shifts[1 - shifts.index(shift)]
-        schedule.append({'className': a['className'], 'shift': shift, 'day': day,
-                         'period': period, 'subject': a['subject'], 'teacher': a['teacher'],
-                         'locked': (a['className'], shift, day, period) in locked})
-    for cname, shift, day, period in fixed:
-        event = next(e for e in events if e['shift'] == shift and int(e['day']) == day and int(e['period']) == period)
-        schedule.append({'className': cname, 'shift': shift, 'day': day, 'period': period,
-                         'subject': event['name'], 'teacher': ''})
-    math_sessions = defaultdict(int)
-    experience_sessions = defaultdict(lambda: defaultdict(set))
-    for lesson in schedule:
-        if not lesson.get('teacher'):
-            continue
-        key = subject_key(lesson['subject'])
-        if key == 'toan':
-            math_sessions[lesson['className'], lesson['shift'], lesson['day']] += 1
-        if key == 'hoatdongtrainghiem':
-            experience_sessions[lesson['teacher'], lesson['shift']][lesson['day']].add(lesson['className'])
-    math_double_count = sum(count == 2 for count in math_sessions.values())
-    split_teachers = []
-    for (teacher, shift), days in experience_sessions.items():
-        count = sum(len(classes) for classes in days.values())
-        if count >= 2 and len(days) > (count + 1) // 2:
-            split_teachers.append(f'{teacher} ({"sáng" if shift == "morning" else "chiều"})')
-    notes = []
-    if math_double_count:
-        notes.append(f'l\u1ecbch n\u00e0y c\u00f3 {math_double_count} bu\u1ed5i h\u1ecdc 2 ti\u1ebft To\u00e1n; ch\u01b0a x\u00e1c \u0111\u1ecbnh \u0111\u01b0\u1ee3c c\u00f3 th\u1ec3 gi\u1ea3m th\u00eam hay kh\u00f4ng')
-    if split_teachers:
-        notes.append('ch\u01b0a gh\u00e9p h\u1ebft c\u00e1c l\u1edbp Ho\u1ea1t \u0111\u1ed9ng tr\u1ea3i nghi\u1ec7m cho ' + ', '.join(split_teachers))
-    message = 'Đã tìm được lịch hợp lệ.' + (' Lưu ý: ' + '; '.join(notes) + '.' if notes else '')
-    return {'ok': True, 'status': 'feasible', 'schedule': schedule, 'message': message,
-            'singleMath': math_double_count == 0, 'pairedExperience': not split_teachers,
-            'mathDoubleCount': math_double_count, 'unpairedExperience': split_teachers}
+    return result(values)
 
 
-def run(state, cancel=None):
+def run(state, cancel=None, report=None):
     """Solve and report every failure as a result document instead of raising."""
     try:
-        return solve(state, cancel=cancel)
+        return solve(state, cancel=cancel, report=report)
     except ModuleNotFoundError:
         return {'ok': False, 'status': 'error', 'message':
                 'Chưa tải được OR-Tools. Hãy chạy: python -m pip install --target build/vendor ortools'}

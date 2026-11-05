@@ -220,11 +220,11 @@ class Handler(BaseHTTPRequestHandler):
         state = self.json_body(2_000_000, 'Dữ liệu quá lớn.')
         if not isinstance(state, dict):
             raise ValueError('Dữ liệu không hợp lệ.')
-        cancel, outcome = threading.Event(), {}
+        cancel, outcome, better = threading.Event(), {}, {}
 
         def work():
             try:
-                result = solver.run(state, cancel)
+                result = solver.run(state, cancel, lambda found: better.update(latest=found))
                 if result.get('ok') is True:
                     validator.check_result(state, result)
                 outcome['event'] = {'type': 'result', 'result': result}
@@ -244,6 +244,13 @@ class Handler(BaseHTTPRequestHandler):
             worker.start()
             while worker.join(1) is None and worker.is_alive():
                 self.event({'type': 'progress', 'phase': 'search', 'elapsed': int(time.monotonic() - start)})
+                found = better.pop('latest', None)
+                if found is not None and found.get('ok') is True:
+                    try:
+                        validator.check_result(state, found)
+                    except Exception:  # noqa: BLE001 - only validated timetables reach the page
+                        continue
+                    self.event({'type': 'partial', 'result': found})
             self.event(outcome['event'])
         except (BrokenPipeError, ConnectionResetError):
             cancel.set()  # the user pressed stop or closed the page
