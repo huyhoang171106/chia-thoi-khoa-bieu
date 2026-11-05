@@ -1,10 +1,15 @@
-"""CP-SAT timetable solver. Reads a state JSON document from stdin."""
-import json
+"""CP-SAT timetable solver."""
+import threading
 import time
 import sys
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
+
+# Seconds spent improving the first valid timetable (fewer sessions, fewer gaps).
+IMPROVE_SECONDS = 20
+# One teaching session costs as much as five teacher gaps.
+SESSION_COST = 100
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'build' / 'vendor'))
 
@@ -72,7 +77,26 @@ def session_conflicts(classes, teachers, assignments, single_math=False):
     return conflicts
 
 
-def solve(state, time_limit=None, require_extra_pairing=False):
+def search(solver, model, cancel):
+    """Run one CP-SAT search; setting `cancel` (a threading.Event) stops it early."""
+    if cancel is None:
+        return solver.solve(model)
+    done = threading.Event()
+
+    def watch():
+        while not done.wait(0.2):
+            if cancel.is_set():
+                solver.stop_search()
+                return
+
+    threading.Thread(target=watch, daemon=True).start()
+    try:
+        return solver.solve(model)
+    finally:
+        done.set()
+
+
+def solve(state, time_limit=None, require_extra_pairing=False, cancel=None):
     from ortools.sat.python import cp_model
 
     classes = state.get('classes', [])
@@ -195,6 +219,7 @@ def solve(state, time_limit=None, require_extra_pairing=False):
                 model.add(sum(busy) >= 2 * session)
                 model.add(sum(busy) <= 5 * session)
                 sessions.append(session)
+                soft_costs.append(SESSION_COST * session)
                 for left in range(5):
                     for right in range(left + 3, 5):
                         model.add(sum(busy[left + 1:right]) >= busy[left] + busy[right] - 1)
@@ -349,7 +374,7 @@ def solve(state, time_limit=None, require_extra_pairing=False):
                 hinted.add(key)
                 break
 
-    compact_weight = 800 * len(teachers) + 1
+    compact_weight = (800 + 10 * SESSION_COST) * len(teachers) + 1
     pairing_bound = sum(len(group) for group in experience_groups.values())
     model.minimize(sum(math_doubles) * (pairing_bound + 1) * compact_weight +
                    sum(pairing_excess) * compact_weight + sum(soft_costs))
@@ -362,29 +387,45 @@ def solve(state, time_limit=None, require_extra_pairing=False):
         if single_math and single_math_conflicts:
             continue
         remaining = None if time_limit is None else time_limit - (time.monotonic() - started)
-        if remaining is not None and remaining <= 0:
+        if remaining is not None and remaining <= 0 or cancel is not None and cancel.is_set():
             status = cp_model.UNKNOWN
             break
-        model.clear_assumptions()
-        model.add_assumptions([prefer_single_math if single_math else prefer_single_math.Not(),
-                               prefer_paired_experience if pair_experience else prefer_paired_experience.Not()])
+        # Fix the preferences in a copy; assumptions would force single-threaded search.
+        scenario = model.clone()
+        for literal, wanted in ((prefer_single_math, single_math), (prefer_paired_experience, pair_experience)):
+            scenario.add(scenario.get_bool_var_from_proto_index(literal.index) == int(wanted))
         solver = cp_model.CpSolver()
         solver.parameters.stop_after_first_solution = True
         if index == 0:
             solver.parameters.max_time_in_seconds = min(8, remaining) if remaining is not None else 8
         elif remaining is not None:
             solver.parameters.max_time_in_seconds = remaining
-        solver.parameters.num_search_workers = 8
-        status = solver.solve(model)
+        status = search(solver, scenario, cancel)
         if status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
             break
+    values = {}
+    if status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+        values = {key: solver.value(var) for key, var in variables.items()}
+    if status == cp_model.FEASIBLE:
+        # The first solution only proves feasibility. Starting from it, spend a
+        # bounded budget minimizing sessions and gaps under the same preferences.
+        remaining = None if time_limit is None else time_limit - (time.monotonic() - started)
+        budget = IMPROVE_SECONDS if remaining is None else min(IMPROVE_SECONDS, remaining)
+        if budget > 0:
+            scenario.clear_hints()
+            for key, var in variables.items():
+                scenario.add_hint(scenario.get_bool_var_from_proto_index(var.index), values[key])
+            solver.parameters.stop_after_first_solution = False
+            solver.parameters.max_time_in_seconds = budget
+            if search(solver, scenario, cancel) in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+                values = {key: solver.value(var) for key, var in variables.items()}
     if status == cp_model.INFEASIBLE:
         return {'ok': False, 'status': 'infeasible', 'message': 'Các quy định và phân công không thể thỏa đồng thời, bao gồm yêu cầu mỗi buổi dạy ít nhất 2 tiết. Hãy kiểm tra số buổi, phân công và các tiết khóa.'}
     if status not in (cp_model.FEASIBLE, cp_model.OPTIMAL):
         return {'ok': False, 'status': 'unknown', 'message': 'Chưa xác định được lịch hợp lệ hay vô nghiệm.'}
     schedule = []
-    for (ai, day, period), var in variables.items():
-        if not solver.value(var):
+    for (ai, day, period), value in values.items():
+        if not value:
             continue
         a = assignments[ai]
         shift = class_by_name[a['className']]['shift']
@@ -424,12 +465,12 @@ def solve(state, time_limit=None, require_extra_pairing=False):
             'mathDoubleCount': math_double_count, 'unpairedExperience': split_teachers}
 
 
-if __name__ == '__main__':
+def run(state, cancel=None):
+    """Solve and report every failure as a result document instead of raising."""
     try:
-        result = solve(json.load(sys.stdin))
+        return solve(state, cancel=cancel)
     except ModuleNotFoundError:
-        result = {'ok': False, 'status': 'error', 'message':
-                  'Chưa tải được OR-Tools. Hãy chạy: python -m pip install --target build/vendor ortools'}
+        return {'ok': False, 'status': 'error', 'message':
+                'Chưa tải được OR-Tools. Hãy chạy: python -m pip install --target build/vendor ortools'}
     except Exception as exc:
-        result = {'ok': False, 'status': 'error', 'message': str(exc)}
-    print(json.dumps(result, ensure_ascii=False))
+        return {'ok': False, 'status': 'error', 'message': str(exc)}

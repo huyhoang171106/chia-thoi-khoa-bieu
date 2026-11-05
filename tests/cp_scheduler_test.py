@@ -6,8 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'build' / 'vendor'))
-sys.path.insert(0, str(ROOT / 'scripts'))
-import cp_scheduler
+sys.path.insert(0, str(ROOT))
+from server import solver as cp_scheduler
 
 HAS_ORTOOLS = importlib.util.find_spec('ortools') is not None
 

@@ -19,39 +19,30 @@ The application interface is in Vietnamese. This guide keeps exact interface lab
 
 | Component | Purpose |
 | --- | --- |
-| Windows with Windows PowerShell | SQL Server access through `System.Data.SqlClient` |
-| Java JDK 21 | Compile and run the Java server |
-| Node.js and npm | Run the development launcher |
-| Python with pip | Run the CP-SAT scheduling worker |
-| SQL Server | Store accounts and application data |
+| Python 3.10 or later with pip | Run the server, the CP-SAT scheduler, and the SQLite database |
+| Node.js and npm | Run the development launcher and the frontend tests |
 
-Ensure `java`, `javac`, `node`, `npm`, and `python` are available on your `PATH`. Maven and an `npm install` step are not required.
+Ensure `node`, `npm`, and `python` (`python3` on Linux and macOS) are available on your `PATH`. No database server, JDK, or `npm install` step is required.
 
 ## Getting started
 
-### 1. Configure SQL Server
-
-Create a database, then create a `.env` file in the project root with your SQL Server connection details:
-
-```dotenv
-DB_HOST=localhost
-DB_PORT=1433
-DB_NAME=lich_truong
-DB_USER=your_sql_login
-DB_PASSWORD=your_sql_password
-```
-
-The connection uses SQL Server Authentication. The database account needs permission to read data, write data, and create tables. Application tables are created automatically when needed.
-
-Connections are encrypted. Connections to `localhost` or `127.0.0.1` trust the local server certificate; other database hosts require a trusted certificate.
-
-### 2. Install the scheduling dependency
+### 1. Install the scheduling dependency
 
 Run once from the project root:
 
 ```powershell
 python -m pip install --target build/vendor ortools
 ```
+
+### 2. Moving from SQL Server (only for older installations)
+
+Earlier versions stored data in SQL Server. To copy accounts and timetables into the new database, run once on the Windows machine that used SQL Server, with the old `.env` file still in the project root and the server stopped:
+
+```powershell
+python scripts/migrate_sqlserver.py
+```
+
+Passwords keep working; everyone signs in again afterwards. The script refuses to run if the new database already has accounts. After migrating, `.env` and `scripts/sql-query.ps1` are no longer used.
 
 ### 3. Start the application
 
@@ -154,7 +145,9 @@ For a teacher assigned exactly one session, two periods of a low-frequency subje
 
 The scheduler initially tries, for up to **eight seconds**, to place at most one mathematics period per class per session and pair experiential-activity classes taught by the same teacher. Two classes can share a teacher's session by using periods 1–2 and 3–4.
 
-If this search does not find a timetable, the scheduler relaxes these preferences while keeping all mandatory constraints and locks. It also considers reducing teacher gaps, but stops at the first valid solution; it does **not** guarantee an optimal timetable.
+If this search does not find a timetable, the scheduler relaxes these preferences while keeping all mandatory constraints and locks.
+
+After the first valid timetable is found, the scheduler spends up to **20 seconds** improving it. After the two preferences above, it favors fewer teaching sessions per teacher (teachers on the default 4–5 session rule are moved toward 4 sessions) and fewer empty periods between a teacher's lessons; one extra session weighs as much as five such gaps. It does **not** guarantee an optimal timetable. Stopping during this phase keeps the current timetable and discards the new result.
 
 Results identify sessions with two mathematics periods and teachers whose experiential-activity classes remain unpaired. These counts are not guaranteed to be minimal. A timetable is reported as infeasible only when the solver proves that the constraints cannot all be satisfied.
 
@@ -191,9 +184,11 @@ Register with a 3–40-character username without accents and a password of at l
 
 A new login invalidates the account's previous session immediately on the server. The previous interface reports this on its next request or periodic session check. Password reset is not supported.
 
-The status bar reports database connectivity and save results. If a connection fails, temporary data remains in the browser. Existing browser data is transferred to the database when no account data is stored there. If local unsynchronized data conflicts with database data, synchronization pauses to avoid overwriting either copy. Back up and resolve the conflicting data before continuing.
+Data is stored in `data/lich-truong.db` (SQLite). Set the `LT_DB_FILE` environment variable to use a different file.
 
-Back up SQL Server regularly for important data.
+The status bar reports server connectivity and save results. If a connection fails, temporary data remains in the browser. Existing browser data is transferred to the database when no account data is stored there. If local unsynchronized data conflicts with database data, synchronization pauses to avoid overwriting either copy. Back up and resolve the conflicting data before continuing.
+
+Back up regularly by copying `data/lich-truong.db` while the server is stopped, or at any time with `sqlite3 data/lich-truong.db ".backup backup.db"`.
 
 The application currently listens only on localhost. Access from other devices requires a shared deployment with HTTPS and corresponding server and security configuration changes.
 
